@@ -7,6 +7,7 @@ class HDERPBot : HDUPK {
     float accel;
     float max_speed;
     float turn_speed;
+    double driver_angle;
     bool use_mouse;
 
     default {
@@ -38,21 +39,53 @@ class HDERPBot : HDUPK {
     }
 
     override void BeginPlay() {
-        max_speed = 20;
+        max_speed = 2;
         turn_speed = 2;
+        use_mouse = true;
+    }
+
+    double GetActualAngle() {
+        // 361 should not be possible to achieve
+        int ts = driver.angle / 360;
+
+        // Check if negative
+        if (driver.angle < 0) {
+            ts = (ts < 0)? ts * -1 + 1 : 1;
+            return (driver.angle + (360 * ts));
+        } else {
+            return (driver.angle - (360 * ts));
+        }
     }
 
     override void Tick() {
         Super.Tick();
+        float new_speed;
         if (driver) {
             // Turn
-            if (driver.player.cmd.buttons & BT_MOVELEFT) {
-                angle += turn_speed;
-            } else if (driver.player.cmd.buttons & BT_MOVERIGHT) {
-                angle -= turn_speed;
+            if (use_mouse) {
+                driver_angle = GetActualAngle();
+
+                console.printf(string.format("driverangle: %f actual_angle:%f", driver.angle, driver_angle));
+
+                if (angle != driver_angle) {
+                    // Find the shorter path
+                    float angle_diff = driver_angle - angle;
+                    double new_angle;
+                    bool is_flipped = (
+                        angle_diff > 180 ||
+                        (angle_diff < 0 && angle_diff > -180)
+                    );
+                    turn_speed = (angle_diff < 0)? log(-angle_diff) : log(angle_diff);
+                    angle = (is_flipped)? angle - turn_speed : angle + turn_speed;
+                }
+            } else {
+                if (driver.player.cmd.buttons & BT_MOVELEFT) {
+                    angle += turn_speed;
+                } else if (driver.player.cmd.buttons & BT_MOVERIGHT) {
+                    angle -= turn_speed;
+                }
             }
 
-            // 360 degree is the limit :]
             if (angle > 360) {
                 angle = 1;
             } else if (angle < 0) {
@@ -62,39 +95,40 @@ class HDERPBot : HDUPK {
             // Drive
             if (driver.player.cmd.buttons & BT_FORWARD) {
                 // Accelerate
-                speed += 0.1;
+                new_speed += 0.1;
             } else if (driver.player.cmd.buttons & BT_BACK) {
                 // Decelerate
-                if (vel.x > 0 || vel.y > 0) {
-                    speed -= 0.2;
+                if (speed > 0) {
+                    new_speed -= 0.2;
                 } else {
-                    speed -= 0.1;
-                }
-            } else if (speed != 0) {
-                // Decelerate
-                bool is_negative = (speed < 0);
-                let new_speed = (is_negative)? speed + 0.1 : speed - 0.1;
-                speed = (is_negative)? max(new_speed, speed) : min(new_speed, speed);
-            }
-
-            // Make sure you aren't flying at the speed of light
-            speed = clamp(speed, -max_speed, max_speed);
-
-            Vector2 nv2 = (cos(angle), sin(angle)) * speed;
-            if (floorz >= pos.z) {
-                if (TryMove(pos.xy+nv2, true)) {
-                    driver.SetOrigin(pos, true);
-                    //driver.TryMove(pos.xy+nv2, true);
-                } else {
-                    speed = 0;
+                    new_speed -= 0.1;
                 }
             }
-
-            Console.PrintF(string.Format(
-                "=HDERP= Speed:%f Angle:%d",
-                speed, angle
-            ));
+            driver.SetOrigin(pos, true);
         }
+
+        if (new_speed == 0 && speed != 0) {
+            // Friction
+            bool is_negative = (speed < 0);
+            new_speed = (is_negative)? speed + 0.05 : speed - 0.05;
+            speed = (is_negative)? min(new_speed, 0) : max(new_speed, 0);
+        } else {
+            speed += new_speed;
+        }
+
+        // Make sure you aren't flying at the speed of light
+        speed = Clamp(speed, -max_speed, max_speed);
+
+        Vector2 nv2 = (cos(angle), sin(angle)) * speed;
+        if (floorz >= pos.z) {
+            vel.x += nv2.x;
+            vel.y += nv2.y;
+        }
+
+        Console.PrintF(string.Format(
+            "=HDERP= Speed:%f Angle:%d vel-x:%f vel-y:%f",
+            speed, angle, vel.x, vel.y
+        ));
     }
 
     override void A_HDUPKGive() {
@@ -129,9 +163,29 @@ class HDERPBot : HDUPK {
     }
 }
 
-class DDERPUiHandler : EventHandler {
-    override void WorldLoaded(WorldEvent e) {
-        // Enter UI mode
-        self.IsUiProcessor = true;
+class HDERPUiHandler : EventHandler {
+    override void RenderOverlay(RenderEvent e) {
+        HDPlayerPawn hdp = HDPlayerPawn(players[consoleplayer].mo);
+        if (!hdp) {
+            return;
+        }
+
+        let hderps = ThinkerIterator.Create("HDERPBot");
+        let hderp = hderps.next();
+
+        while (hderp) {
+            let hacked = HDERPBot(hderp);
+            if (hacked.driver && hacked.driver == hdp) {
+                // Rotation magic
+                Vector2 driver_angle = (cos(hacked.driver_angle), sin(hacked.driver_angle));
+                // Get the angles
+                Vector2 hderp_angle = (255 + (cos(hacked.angle - hacked.driver_angle) * 20), 255 + (sin(hacked.angle - hacked.driver_angle) * 20));
+
+                // Draw the compass
+                Screen.DrawLine(255, 255, 255 * 5, 255, "green", 255);
+                Screen.DrawLine(255, 255, hderp_angle.x, hderp_angle.y, "white", 255);
+            }
+            hderp = hderps.next();
+        }
     }
 }

@@ -61,10 +61,59 @@ class HDERPBot : HDUPK {
         }
     }
 
+    void HijackMove() {
+        if (driver) {
+            driver.movehijacked = true;
+        } else {
+            driver.player.cmd.forwardmove = 0;
+            driver.player.cmd.sidemove = 0;
+        }
+    }
+
+    void DoTurn() {
+        // Turn
+        if (use_mouse) {
+            driver_angle = GetActualAngle();
+
+            //console.printf(string.format("driverangle: %f actual_angle:%f", driver.angle, driver_angle));
+
+            if (angle != driver_angle) {
+                // Find the shorter path
+                float angle_diff = driver_angle - angle;
+                double new_angle;
+                bool is_flipped = (
+                    angle_diff > 180 ||
+                    (angle_diff < 0 && angle_diff > -180)
+                );
+                turn_speed = (angle_diff < 0)? log(-angle_diff) : log(angle_diff);
+                angle = (is_flipped)? angle - turn_speed : angle + turn_speed;
+            }
+        } else {
+            turn_speed = 2;
+            if (driver.player.cmd.buttons & BT_MOVELEFT) {
+                angle += turn_speed;
+            } else if (driver.player.cmd.buttons & BT_MOVERIGHT) {
+                angle -= turn_speed;
+            }
+        }
+
+        if (angle > 360) {
+            angle = 1;
+        } else if (angle < 0) {
+            angle = 359;
+        }
+    }
+
     override void Tick() {
         Super.Tick();
         float new_speed;
         if (driver) {
+            // Can't ride a vehicle if you're down
+            if (driver.incapacitated || health == 0) {
+                driver = null;
+                return;
+            }
+
             // Dismount if crouch jumping
             if (
                 driver.player.cmd.buttons & BT_CROUCH &&
@@ -75,36 +124,8 @@ class HDERPBot : HDUPK {
                 return;
             }
 
-            // Turn
-            if (use_mouse) {
-                driver_angle = GetActualAngle();
-
-                //console.printf(string.format("driverangle: %f actual_angle:%f", driver.angle, driver_angle));
-
-                if (angle != driver_angle) {
-                    // Find the shorter path
-                    float angle_diff = driver_angle - angle;
-                    double new_angle;
-                    bool is_flipped = (
-                        angle_diff > 180 ||
-                        (angle_diff < 0 && angle_diff > -180)
-                    );
-                    turn_speed = (angle_diff < 0)? log(-angle_diff) : log(angle_diff);
-                    angle = (is_flipped)? angle - turn_speed : angle + turn_speed;
-                }
-            } else {
-                if (driver.player.cmd.buttons & BT_MOVELEFT) {
-                    angle += turn_speed;
-                } else if (driver.player.cmd.buttons & BT_MOVERIGHT) {
-                    angle -= turn_speed;
-                }
-            }
-
-            if (angle > 360) {
-                angle = 1;
-            } else if (angle < 0) {
-                angle = 359;
-            }
+            // Moved into its own function, because it was getting messy
+            DoTurn();
 
             // Drive
             bool use_battery;
@@ -128,7 +149,7 @@ class HDERPBot : HDUPK {
         if (new_speed == 0 && speed != 0) {
             // Friction
             bool is_negative = (speed < 0);
-            new_speed = (is_negative)? speed + 0.05 : speed - 0.05;
+            new_speed = (is_negative)? speed + 0.025 : speed - 0.025;
             speed = (is_negative)? min(new_speed, 0) : max(new_speed, 0);
         } else {
             speed += new_speed;
@@ -142,6 +163,7 @@ class HDERPBot : HDUPK {
             vel.x += nv2.x;
             vel.y += nv2.y;
         }
+
 
         /*
         Console.PrintF(string.Format(
@@ -159,11 +181,9 @@ class HDERPBot : HDUPK {
             driver = HDPlayerPawn(grabber);
             driver.SetOrigin(pos, true);
         } else if (
-            driver &&
-            driver == HDPlayerPawn(grabber) &&
-            driver.player.cmd.buttons & BT_CROUCH
+            !driver &&
+            grabber.player.cmd.buttons & BT_CROUCH
         ) {
-            if (driver) return false;
             return true;
         }
         return false;

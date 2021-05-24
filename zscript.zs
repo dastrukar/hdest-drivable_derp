@@ -4,8 +4,10 @@ version 4.5
 // Hacked DERP Bot
 class HDERPBot : HDUPK {
     HDPlayerPawn driver;
+    int battery; // 0-20
     float accel;
     float max_speed;
+    float break_speed;
     float turn_speed;
     double driver_angle;
     bool use_mouse;
@@ -40,8 +42,10 @@ class HDERPBot : HDUPK {
 
     override void BeginPlay() {
         max_speed = 2;
+        break_speed = 1;
         turn_speed = 2;
         use_mouse = true;
+        battery = 20;
     }
 
     double GetActualAngle() {
@@ -103,9 +107,11 @@ class HDERPBot : HDUPK {
             }
 
             // Drive
+            bool use_battery;
             if (driver.player.cmd.buttons & BT_FORWARD) {
                 // Accelerate
                 new_speed += 0.1;
+                use_battery = true;
             } else if (driver.player.cmd.buttons & BT_BACK) {
                 // Decelerate
                 if (speed > 0) {
@@ -113,8 +119,10 @@ class HDERPBot : HDUPK {
                 } else {
                     new_speed -= 0.1;
                 }
+                use_battery = true;
             }
             driver.SetOrigin(pos, true);
+            if (use_battery && battery > 0 && !random(0,4096)) battery--;
         }
 
         if (new_speed == 0 && speed != 0) {
@@ -127,7 +135,7 @@ class HDERPBot : HDUPK {
         }
 
         // Make sure you aren't flying at the speed of light
-        speed = Clamp(speed, -max_speed, max_speed);
+        speed = Clamp(speed, -break_speed, max_speed);
 
         Vector2 nv2 = (cos(angle), sin(angle)) * speed;
         if (floorz >= pos.z) {
@@ -155,23 +163,13 @@ class HDERPBot : HDUPK {
             driver == HDPlayerPawn(grabber) &&
             driver.player.cmd.buttons & BT_CROUCH
         ) {
-            driver.A_Log("Dismounting.", true);
-            driver = null;
+            if (driver) return false;
+            return true;
         }
         return false;
     }
 
     States {
-        Give:
-            DERP A 0 {
-                HDPlayerPawn hdp = HDPlayerPawn(target);
-                if (hdp && !driver) {
-                    driver = hdp;
-                    driver.SetOrigin(pos, true);
-                    return;
-                }
-            }
-            goto Spawn;
         Spawn:
             DERP A 1;
             loop;
@@ -179,6 +177,33 @@ class HDERPBot : HDUPK {
         Death:
             DERP A -1;
             stop;
+    }
+}
+
+class HDERPUsable : HDWeapon {
+    default {
+        +Weapon.WIMPY_WEAPON
+        +Inventory.INVBAR
+        +HDWeapon.DROPTRANSLATION
+        +HDWeapon.FITSINBACKPACK
+        HDWeapon.barrelsize 0, 0, 0;
+        Weapon.SelectionOrder 1014;
+
+        Scale 0.6;
+        Inventory.Icon "DERPEX";
+        Inventory.PickupMessage "Picked up a... Wait, what did you do to this D.E.R.P???";
+        Inventory.PickupSound "derp/crawl";
+        Translation 0;
+        Tag "H.D.E.R.P. robot";
+    }
+
+    override string GetHelpText() {
+        return 
+            ((weaponstatus[0]&DERPF_BROKEN)?
+            (WEPHELP_FIRE.."+"..WEPHELP_RELOAD.."  Repair\n") : (WEPHELP_FIRE.."  Deploy\n"))
+            ..WEPHELP_RELOAD.."  Reload battery\n"
+            ..WEPHELP_UNLOAD.."  Unload battery"
+            ;
     }
 }
 

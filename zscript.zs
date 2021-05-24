@@ -61,11 +61,21 @@ class HDERPBot : HDUPK {
         Super.Tick();
         float new_speed;
         if (driver) {
+            // Dismount if crouch jumping
+            if (
+                driver.player.cmd.buttons & BT_CROUCH &&
+                driver.player.cmd.buttons & BT_JUMP
+            ) {
+                driver.A_Log("Dismounting.", true);
+                driver = null;
+                return;
+            }
+
             // Turn
             if (use_mouse) {
                 driver_angle = GetActualAngle();
 
-                console.printf(string.format("driverangle: %f actual_angle:%f", driver.angle, driver_angle));
+                //console.printf(string.format("driverangle: %f actual_angle:%f", driver.angle, driver_angle));
 
                 if (angle != driver_angle) {
                     // Find the shorter path
@@ -125,17 +135,28 @@ class HDERPBot : HDUPK {
             vel.y += nv2.y;
         }
 
+        /*
         Console.PrintF(string.Format(
             "=HDERP= Speed:%f Angle:%d vel-x:%f vel-y:%f",
             speed, angle, vel.x, vel.y
         ));
+        */
     }
 
     override bool OnGrab(actor grabber) {
         if (!grabber) return false;
+
+        // Grab if crouching
         if (!driver) {
             driver = HDPlayerPawn(grabber);
             driver.SetOrigin(pos, true);
+        } else if (
+            driver &&
+            driver == HDPlayerPawn(grabber) &&
+            driver.player.cmd.buttons & BT_CROUCH
+        ) {
+            driver.A_Log("Dismounting.", true);
+            driver = null;
         }
         return false;
     }

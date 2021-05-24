@@ -131,15 +131,13 @@ class HDERPBot : HDUPK {
         ));
     }
 
-    override void A_HDUPKGive() {
-        if (!picktarget.player) return;
-
+    override bool OnGrab(actor grabber) {
+        if (!grabber) return false;
         if (!driver) {
-            driver = HDPlayerPawn(picktarget);
+            driver = HDPlayerPawn(grabber);
             driver.SetOrigin(pos, true);
-            return;
-            Super.A_HDUPKGive();
         }
+        return false;
     }
 
     States {

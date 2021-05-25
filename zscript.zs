@@ -10,6 +10,7 @@ class HDERPBot : HDUPK {
     float break_speed;
     float turn_speed;
     double driver_angle;
+    Vector3 prvel;
     bool use_mouse;
 
     default {
@@ -21,7 +22,6 @@ class HDERPBot : HDUPK {
         +Actor.DONTGIB
         +Actor.NOBLOOD
         +Actor.GHOST
-        -Actor.NOGRAVITY
 
         Health 100;
         Mass 20;
@@ -70,6 +70,31 @@ class HDERPBot : HDUPK {
         }
     }
 
+    void DismountDriver(bool msg=false) {
+        if (!driver) {
+            return;
+        }
+
+        if (msg) {
+            driver.A_Log("Dismounting.", true);
+        }
+        driver.vel = prvel;
+        driver = null;
+    }
+
+    void VelocityCheck() {
+        Vector2 vel_diff = (vel.x - prvel.x, vel.y - prvel.y);
+        if (
+            vel_diff.x < -20 ||
+            vel_diff.y < -20 ||
+            vel_diff.x > 20 ||
+            vel_diff.y > 20
+        ) {
+            DismountDriver();
+            self.SetInventory("heat", 10000);
+        }
+    }
+
     void DoTurn() {
         // Turn
         if (use_mouse) {
@@ -106,6 +131,8 @@ class HDERPBot : HDUPK {
 
     override void Tick() {
         Super.Tick();
+        VelocityCheck();
+
         float new_speed;
         if (driver) {
             // Can't ride a vehicle if you're down
@@ -113,14 +140,14 @@ class HDERPBot : HDUPK {
                 driver = null;
                 return;
             }
+            HijackMove();
 
             // Dismount if crouch jumping
             if (
                 driver.player.cmd.buttons & BT_CROUCH &&
                 driver.player.cmd.buttons & BT_JUMP
             ) {
-                driver.A_Log("Dismounting.", true);
-                driver = null;
+                DismountDriver(true);
                 return;
             }
 
@@ -162,8 +189,8 @@ class HDERPBot : HDUPK {
         if (floorz >= pos.z) {
             vel.x += nv2.x;
             vel.y += nv2.y;
+            prvel = vel;
         }
-
 
         /*
         Console.PrintF(string.Format(
@@ -195,6 +222,10 @@ class HDERPBot : HDUPK {
             loop;
 
         Death:
+            DERP A 0 {
+                A_GiveInventory("heat", 1000);
+            }
+        Dead:
             DERP A -1;
             stop;
     }
@@ -243,10 +274,11 @@ class HDERPUiHandler : EventHandler {
                 // Rotation magic
                 Vector2 driver_angle = (cos(hacked.driver_angle), sin(hacked.driver_angle));
                 // Get the angles
-                Vector2 hderp_angle = (255 + (cos(hacked.angle - hacked.driver_angle) * 20), 255 + (sin(hacked.angle - hacked.driver_angle) * 20));
+                float line_scale = 20 * (1 + ((hacked.speed < 0)? -hacked.speed : hacked.speed));
+                Vector2 hderp_angle = (255 + (cos(hacked.driver_angle - hacked.angle - 90) * line_scale), 255 + (sin(hacked.driver_angle - hacked.angle - 90) * line_scale));
 
                 // Draw the compass
-                Screen.DrawLine(255, 255, 255 * 5, 255, "green", 255);
+                Screen.DrawLine(255, 255, 255, 255 / 5, "green", 255);
                 Screen.DrawLine(255, 255, hderp_angle.x, hderp_angle.y, "white", 255);
             }
             hderp = hderps.next();
